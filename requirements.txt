@@ -1,5 +1,8 @@
 Flask
+flask-cors
 google-generativeai
 python-dotenv
-webbrowser
-subprocess
+requests
+edge-tts
+PyPDF2
+gunicorn
