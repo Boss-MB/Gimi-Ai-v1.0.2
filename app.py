@@ -157,3 +157,4 @@ if __name__ == '__main__':
     # Host must be 0.0.0.0 to be accessible
     app.run(host='0.0.0.0', port=port, debug=False)
     app.run(debug=True)
+
