@@ -1,4 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
+    console.log("Gimi AI Loaded"); // Check if script runs
+
     const chatBox = document.getElementById('chat-box');
     const userInput = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
@@ -29,11 +31,140 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- BASE64 AUDIO ---
     const playBase64Audio = (b64) => {
         if (!b64) return;
-        new Audio("data:audio/mp3;base64," + b64).play().catch(console.error);
+        try {
+            const audio = new Audio("data:audio/mp3;base64," + b64);
+            audio.play().catch(e => console.log("Audio Play blocked (User interaction needed first)"));
+        } catch (e) { console.error(e); }
     };
 
-    // --- SEND BTN COLOR ---
+    // --- SEND BTN COLOR TOGGLE ---
     userInput.addEventListener('input', () => {
+        if (userInput.value.trim().length > 0) sendBtn.classList.add('active');
+        else sendBtn.classList.remove('active');
+    });
+
+    // --- ENTER KEY TO SEND ---
+    userInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (userInput.value.trim()) handleCommand(userInput.value.trim(), false);
+        }
+    });
+
+    // --- ADD MESSAGE UI ---
+    const addMessage = (content, sender, isImage = false, shouldScroll = true) => {
+        const wrapper = document.createElement('div');
+        wrapper.className = `message-wrapper ${sender}-wrapper`;
+        const bubble = document.createElement('div');
+        bubble.className = `message-bubble ${sender}-bubble`;
+
+        if (isImage) {
+            bubble.innerHTML = `Generated Image:<br><img src='data:image/jpeg;base64,${content}' onclick="openModal(this.src)">`;
+        } else {
+            bubble.innerHTML = marked.parse(content);
+        }
+        
+        wrapper.appendChild(bubble);
+        chatBox.appendChild(wrapper);
+
+        if (shouldScroll) scrollToBottom();
+        return bubble;
+    };
+
+    // --- MAIN LOGIC ---
+    const handleCommand = async (command, isVoice) => {
+        console.log("Sending command:", command); // Debug log
+
+        addMessage(command, 'user', false, true);
+        userInput.value = '';
+        sendBtn.classList.remove('active');
+        if (isVoice) stopRecognition();
+
+        const loading = addMessage("Thinking...", 'bot', false, true);
+
+        try {
+            const res = await fetch('/execute_command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: command, is_voice: isVoice }),
+            });
+            
+            loading.parentElement.remove();
+            const data = await res.json();
+
+            if (data.is_image) addMessage(data.image_data, 'bot', true, false);
+            else addMessage(data.response, 'bot', false, false);
+
+            if (data.audio_data) playBase64Audio(data.audio_data);
+
+        } catch (error) {
+            loading.parentElement.remove();
+            console.error(error);
+            addMessage('Connection Error: Check Server.', 'bot', false, false);
+        }
+    };
+
+    // --- ATTACH BUTTON ---
+    attachBtn.addEventListener('click', () => {
+        console.log("Attach clicked");
+        fileInput.click();
+    });
+    
+    fileInput.addEventListener('change', async () => {
+        if (!fileInput.files[0]) return;
+        const fd = new FormData();
+        fd.append('file', fileInput.files[0]);
+        addMessage(`Uploading ${fileInput.files[0].name}...`, 'user', false, true);
+        try {
+            const r = await fetch('/upload_file', { method: 'POST', body: fd });
+            const d = await r.json();
+            addMessage(d.message, 'bot', false, true);
+        } catch { addMessage("Upload Failed.", 'bot', false, true); }
+        fileInput.value = '';
+    });
+
+    // --- MIC BUTTON ---
+    const startRecognition = () => {
+        const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!Speech) return alert("Mic not supported in this browser.");
+        
+        recognition = new Speech();
+        recognition.lang = 'en-IN';
+        recognition.onstart = () => { 
+            console.log("Mic Started");
+            isListening = true; 
+            micBtn.classList.add('listening'); 
+        };
+        recognition.onend = () => { 
+            isListening = false; 
+            micBtn.classList.remove('listening'); 
+        };
+        recognition.onresult = (e) => {
+            const t = e.results[e.results.length-1][0].transcript;
+            userInput.value = t;
+            handleCommand(t, true);
+        };
+        try { recognition.start(); } catch (e) { console.error(e); }
+    };
+    
+    const stopRecognition = () => { if (recognition) recognition.stop(); };
+
+    micBtn.addEventListener('click', () => {
+        console.log("Mic clicked");
+        // HTTPS Check
+        if (location.protocol !== 'https:' && location.hostname !== '127.0.0.1' && location.hostname !== 'localhost') {
+            alert("Mic requires HTTPS!");
+            return;
+        }
+        isListening ? stopRecognition() : startRecognition();
+    });
+
+    // --- SEND BUTTON ---
+    sendBtn.addEventListener('click', () => {
+        console.log("Send clicked");
+        if(userInput.value.trim()) handleCommand(userInput.value.trim(), false);
+    });
+});
         if (userInput.value.trim().length > 0) sendBtn.classList.add('active');
         else sendBtn.classList.remove('active');
     });
@@ -261,3 +392,4 @@ document.addEventListener('DOMContentLoaded', () => {
     addMessage(welcomeMessage, 'bot');
 
 });
+
